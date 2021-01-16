@@ -1,7 +1,12 @@
 package edu.berkeley.cs186.database.index;
 
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 import edu.berkeley.cs186.database.common.Buffer;
 import edu.berkeley.cs186.database.common.Pair;
@@ -49,19 +54,19 @@ class InnerNode extends BPlusNode {
     /**
      * Construct a brand new inner node.
      */
-    InnerNode(BPlusTreeMetadata metadata, BufferManager bufferManager, List<DataBox> keys,
-              List<Long> children, LockContext treeContext) {
-        this(metadata, bufferManager, bufferManager.fetchNewPage(treeContext, metadata.getPartNum(), false),
-             keys, children, treeContext);
+    InnerNode(BPlusTreeMetadata metadata, BufferManager bufferManager, List<DataBox> keys, List<Long> children,
+            LockContext treeContext) {
+        this(metadata, bufferManager, bufferManager.fetchNewPage(treeContext, metadata.getPartNum(), false), keys,
+                children, treeContext);
     }
 
     /**
      * Construct an inner node that is persisted to page `page`.
      */
-    private InnerNode(BPlusTreeMetadata metadata, BufferManager bufferManager, Page page,
-                      List<DataBox> keys, List<Long> children, LockContext treeContext) {
-        assert(keys.size() <= 2 * metadata.getOrder());
-        assert(keys.size() + 1 == children.size());
+    private InnerNode(BPlusTreeMetadata metadata, BufferManager bufferManager, Page page, List<DataBox> keys,
+            List<Long> children, LockContext treeContext) {
+        assert (keys.size() <= 2 * metadata.getOrder());
+        assert (keys.size() + 1 == children.size());
 
         this.metadata = metadata;
         this.bufferManager = bufferManager;
@@ -78,43 +83,78 @@ class InnerNode extends BPlusNode {
     // See BPlusNode.get.
     @Override
     public LeafNode get(DataBox key) {
-        // TODO(proj2): implement
-
-        return null;
+        return getChild(key).get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
-        assert(children.size() > 0);
-        // TODO(proj2): implement
-
-        return null;
+        assert (children.size() > 0);
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
-        // TODO(proj2): implement
-
-        return Optional.empty();
+        getChild(key).put(key, rid).ifPresent(p -> insert(p.getFirst(), p.getSecond()));
+        Optional<Pair<DataBox, Long>> split = split();
+        sync();
+        return split;
     }
 
     // See BPlusNode.bulkLoad.
     @Override
-    public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
-            float fillFactor) {
-        // TODO(proj2): implement
+    public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data, float fillFactor) {
+        while (data.hasNext() && keys.size() <= metadata.getOrder() * 2) {
+            getChild(children.size() - 1).bulkLoad(data, fillFactor).ifPresent(p -> {
+                keys.add(p.getFirst());
+                children.add(p.getSecond());
+            });
+        }
+        Optional<Pair<DataBox, Long>> split = split();
+        sync();
+        return split;
+    }
 
-        return Optional.empty();
+    private BPlusNode getChild(DataBox key) {
+        for (int i = 0; i < keys.size(); i += 1) {
+            if (keys.get(i).compareTo(key) > 0) {
+                return getChild(i);
+            }
+        }
+        return getChild(children.size() - 1);
+    }
+
+    private void insert(DataBox key, Long pageNum) {
+        for (int i = 0; i < keys.size(); i += 1) {
+            if (keys.get(i).compareTo(key) > 0) {
+                keys.add(i, key);
+                children.add(i + 1, pageNum);
+                return;
+            }
+        }
+        keys.add(key);
+        children.add(pageNum);
+    }
+
+    private Optional<Pair<DataBox, Long>> split() {
+        if (keys.size() <= metadata.getOrder() * 2) {
+            return Optional.empty();
+        }
+        int splitKeySize = keys.size() / 2;
+        DataBox splitKey = keys.get(splitKeySize);
+        List<DataBox> siblingKeys = keys.subList(splitKeySize + 1, keys.size());
+        List<Long> siblingChildren = children.subList(splitKeySize + 1, children.size());
+        InnerNode sibling = new InnerNode(metadata, bufferManager, siblingKeys, siblingChildren, treeContext);
+        keys = keys.subList(0, splitKeySize);
+        children = children.subList(0, splitKeySize + 1);
+        return Optional.of(new Pair<>(splitKey, sibling.getPage().getPageNum()));
     }
 
     // See BPlusNode.remove.
     @Override
     public void remove(DataBox key) {
-        // TODO(proj2): implement
-
-        return;
+        get(key).remove(key);
     }
 
     // Helpers /////////////////////////////////////////////////////////////////
@@ -152,6 +192,7 @@ class InnerNode extends BPlusNode {
     List<Long> getChildren() {
         return children;
     }
+
     /**
      * Returns the largest number d such that the serialization of an InnerNode
      * with 2d keys will fit on a single page.
@@ -283,8 +324,7 @@ class InnerNode extends BPlusNode {
             BPlusNode child = getChild(i);
             long childPageNum = child.getPage().getPageNum();
             lines.add(child.toDot());
-            lines.add(String.format("  \"node%d\":f%d -> \"node%d\";",
-                                    pageNum, i, childPageNum));
+            lines.add(String.format("  \"node%d\":f%d -> \"node%d\";", pageNum, i, childPageNum));
         }
 
         return String.join("\n", lines);
@@ -335,13 +375,13 @@ class InnerNode extends BPlusNode {
     /**
      * Loads an inner node from page `pageNum`.
      */
-    public static InnerNode fromBytes(BPlusTreeMetadata metadata,
-                                      BufferManager bufferManager, LockContext treeContext, long pageNum) {
+    public static InnerNode fromBytes(BPlusTreeMetadata metadata, BufferManager bufferManager, LockContext treeContext,
+            long pageNum) {
         Page page = bufferManager.fetchPage(treeContext, pageNum, false);
         Buffer buf = page.getBuffer();
 
         byte nodeType = buf.get();
-        assert(nodeType == (byte) 0);
+        assert (nodeType == (byte) 0);
 
         List<DataBox> keys = new ArrayList<>();
         List<Long> children = new ArrayList<>();
@@ -365,9 +405,7 @@ class InnerNode extends BPlusNode {
             return false;
         }
         InnerNode n = (InnerNode) o;
-        return page.getPageNum() == n.page.getPageNum() &&
-               keys.equals(n.keys) &&
-               children.equals(n.children);
+        return page.getPageNum() == n.page.getPageNum() && keys.equals(n.keys) && children.equals(n.children);
     }
 
     @Override
