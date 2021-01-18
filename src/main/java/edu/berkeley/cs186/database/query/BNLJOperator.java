@@ -1,6 +1,9 @@
 package edu.berkeley.cs186.database.query;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
 
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
@@ -11,11 +14,8 @@ import edu.berkeley.cs186.database.table.Record;
 class BNLJOperator extends JoinOperator {
     protected int numBuffers;
 
-    BNLJOperator(QueryOperator leftSource,
-                 QueryOperator rightSource,
-                 String leftColumnName,
-                 String rightColumnName,
-                 TransactionContext transaction) {
+    BNLJOperator(QueryOperator leftSource, QueryOperator rightSource, String leftColumnName, String rightColumnName,
+            TransactionContext transaction) {
         super(leftSource, rightSource, leftColumnName, rightColumnName, transaction, JoinType.BNLJ);
 
         this.numBuffers = transaction.getWorkMemSize();
@@ -35,8 +35,7 @@ class BNLJOperator extends JoinOperator {
         int usableBuffers = numBuffers - 2;
         int numLeftPages = getLeftSource().getStats().getNumPages();
         int numRightPages = getRightSource().getStats().getNumPages();
-        return ((int) Math.ceil((double) numLeftPages / (double) usableBuffers)) * numRightPages +
-               numLeftPages;
+        return ((int) Math.ceil((double) numLeftPages / (double) usableBuffers)) * numRightPages + numLeftPages;
     }
 
     /**
@@ -88,7 +87,16 @@ class BNLJOperator extends JoinOperator {
          * and leftRecord should be set to null.
          */
         private void fetchNextLeftBlock() {
-            // TODO(proj3_part1): implement
+            if (leftIterator.hasNext()) {
+                leftRecordIterator = getBlockIterator(getLeftTableName(), leftIterator, numBuffers - 2);
+                leftRecordIterator.markNext();
+                if (leftRecordIterator.hasNext()) {
+                    leftRecord = leftRecordIterator.next();
+                    return;
+                }
+            }
+            leftRecordIterator = null;
+            leftRecord = null;
         }
 
         /**
@@ -100,7 +108,14 @@ class BNLJOperator extends JoinOperator {
          * should be set to null.
          */
         private void fetchNextRightPage() {
-            // TODO(proj3_part1): implement
+            if (rightIterator.hasNext()) {
+                rightRecordIterator = getBlockIterator(getRightTableName(), rightIterator, 1);
+                rightRecordIterator.markNext();
+                if (rightRecordIterator.hasNext()) {
+                    return;
+                }
+            }
+            rightRecordIterator = null;
         }
 
         /**
@@ -110,7 +125,36 @@ class BNLJOperator extends JoinOperator {
          * @throws NoSuchElementException if there are no more Records to yield
          */
         private void fetchNextRecord() {
-            // TODO(proj3_part1): implement
+            nextRecord = null;
+            while (nextRecord == null) {
+                if (leftRecord == null || rightRecordIterator == null) {
+                    throw new NoSuchElementException("No new record to fetch");
+                }
+                if (rightRecordIterator.hasNext()) {
+                    Record rightRecord = rightRecordIterator.next();
+                    DataBox leftJoinValue = leftRecord.getValues().get(getLeftColumnIndex());
+                    DataBox rightJoinValue = rightRecord.getValues().get(getRightColumnIndex());
+                    if (leftJoinValue.equals(rightJoinValue)) {
+                        nextRecord = joinRecords(leftRecord, rightRecord);
+                    }
+                } else if (leftRecordIterator.hasNext()) {
+                    leftRecord = leftRecordIterator.next();
+                    rightRecordIterator.reset();
+                } else {
+                    fetchNextRightPage();
+                    if (rightRecordIterator == null) {
+                        fetchNextLeftBlock();
+                        if (leftRecord == null) {
+                            throw new NoSuchElementException("No new record to fetch");
+                        }
+                        rightIterator.reset();
+                        fetchNextRightPage();
+                    } else {
+                        leftRecordIterator.reset();
+                        leftRecord = leftRecordIterator.next();
+                    }
+                }
+            }
         }
 
         /**

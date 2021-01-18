@@ -1,6 +1,10 @@
 package edu.berkeley.cs186.database.query;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
 
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.iterator.BacktrackingIterator;
@@ -8,11 +12,8 @@ import edu.berkeley.cs186.database.databox.DataBox;
 import edu.berkeley.cs186.database.table.Record;
 
 class SortMergeOperator extends JoinOperator {
-    SortMergeOperator(QueryOperator leftSource,
-                      QueryOperator rightSource,
-                      String leftColumnName,
-                      String rightColumnName,
-                      TransactionContext transaction) {
+    SortMergeOperator(QueryOperator leftSource, QueryOperator rightSource, String leftColumnName,
+            String rightColumnName, TransactionContext transaction) {
         super(leftSource, rightSource, leftColumnName, rightColumnName, transaction, JoinType.SORTMERGE);
 
         this.stats = this.estimateStats();
@@ -57,9 +58,13 @@ class SortMergeOperator extends JoinOperator {
 
         private SortMergeIterator() {
             super();
-            // TODO(proj3_part1): implement
             // Hint: you may find the helper methods getTransaction() and getRecordIterator(tableName)
             // in JoinOperator useful here.
+            leftIterator = getTransaction().getRecordIterator(
+                    new SortOperator(getTransaction(), getLeftTableName(), new LeftRecordComparator()).sort());
+            rightIterator = getTransaction().getRecordIterator(
+                    new SortOperator(getTransaction(), getRightTableName(), new RightRecordComparator()).sort());
+            marked = false;
         }
 
         /**
@@ -69,9 +74,65 @@ class SortMergeOperator extends JoinOperator {
          */
         @Override
         public boolean hasNext() {
-            // TODO(proj3_part1): implement
+            nextRecord = null;
+            if (leftRecord == null && fetchLeftJoinValue() == null) {
+                return false;
+            }
+            if (rightRecord == null && fetchRightJoinValue() == null) {
+                return false;
+            }
+            DataBox leftJoinValue = leftRecord.getValues().get(getLeftColumnIndex());
+            DataBox rightJoinValue = rightRecord.getValues().get(getRightColumnIndex());
+            while (!marked) {
+                while (leftJoinValue.compareTo(rightJoinValue) < 0) {
+                    if ((leftJoinValue = fetchLeftJoinValue()) == null) {
+                        return false;
+                    }
+                }
+                while (rightJoinValue.compareTo(leftJoinValue) < 0) {
+                    if ((rightJoinValue = fetchRightJoinValue()) == null) {
+                        return false;
+                    }
+                }
+                if (leftJoinValue.equals(rightJoinValue)) {
+                    rightIterator.markPrev();
+                    marked = true;
+                }
+            }
+            nextRecord = joinRecords();
+            if ((rightJoinValue = fetchRightJoinValue()) != null && leftJoinValue.equals(rightJoinValue)) {
+                return true;
+            }
+            rightIterator.reset();
+            marked = false;
+            leftRecord = null;
+            rightRecord = null;
+            return true;
+        }
 
-            return false;
+        private DataBox fetchLeftJoinValue() {
+            if (!leftIterator.hasNext()) {
+                leftRecord = null;
+                return null;
+            }
+            leftRecord = leftIterator.next();
+            return leftRecord.getValues().get(getLeftColumnIndex());
+        }
+
+        private DataBox fetchRightJoinValue() {
+            if (!rightIterator.hasNext()) {
+                rightRecord = null;
+                return null;
+            }
+            rightRecord = rightIterator.next();
+            return rightRecord.getValues().get(getRightColumnIndex());
+        }
+
+        private Record joinRecords() {
+            List<DataBox> leftValues = new ArrayList<>(leftRecord.getValues());
+            List<DataBox> rightValues = new ArrayList<>(rightRecord.getValues());
+            leftValues.addAll(rightValues);
+            return new Record(leftValues);
         }
 
         /**
@@ -82,9 +143,10 @@ class SortMergeOperator extends JoinOperator {
          */
         @Override
         public Record next() {
-            // TODO(proj3_part1): implement
-
-            throw new NoSuchElementException();
+            if (nextRecord == null) {
+                throw new NoSuchElementException();
+            }
+            return nextRecord;
         }
 
         @Override
@@ -95,16 +157,16 @@ class SortMergeOperator extends JoinOperator {
         private class LeftRecordComparator implements Comparator<Record> {
             @Override
             public int compare(Record o1, Record o2) {
-                return o1.getValues().get(SortMergeOperator.this.getLeftColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
+                return o1.getValues().get(SortMergeOperator.this.getLeftColumnIndex())
+                        .compareTo(o2.getValues().get(SortMergeOperator.this.getLeftColumnIndex()));
             }
         }
 
         private class RightRecordComparator implements Comparator<Record> {
             @Override
             public int compare(Record o1, Record o2) {
-                return o1.getValues().get(SortMergeOperator.this.getRightColumnIndex()).compareTo(
-                           o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
+                return o1.getValues().get(SortMergeOperator.this.getRightColumnIndex())
+                        .compareTo(o2.getValues().get(SortMergeOperator.this.getRightColumnIndex()));
             }
         }
     }
