@@ -1,6 +1,15 @@
 package edu.berkeley.cs186.database.query;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
+import java.util.Set;
 
 import edu.berkeley.cs186.database.TransactionContext;
 import edu.berkeley.cs186.database.common.PredicateOperator;
@@ -107,8 +116,7 @@ public class QueryPlan {
      * @param comparison the comparator
      * @param value the value to compare against
      */
-    public void select(String column, PredicateOperator comparison,
-                       DataBox value) {
+    public void select(String column, PredicateOperator comparison, DataBox value) {
         this.selectColumnNames.add(column);
         this.selectOperators.add(comparison);
         this.selectDataBoxes.add(value);
@@ -169,8 +177,7 @@ public class QueryPlan {
      * @param leftColumnName the join column in the existing QueryPlan
      * @param rightColumnName the join column in tableName
      */
-    public void join(String tableName, String aliasTableName, String leftColumnName,
-                     String rightColumnName) {
+    public void join(String tableName, String aliasTableName, String leftColumnName, String rightColumnName) {
         if (this.aliases.containsKey(aliasTableName)) {
             throw new QueryPlanException("table/alias " + aliasTableName + " already in use");
         }
@@ -226,8 +233,6 @@ public class QueryPlan {
      * @return an iterator of records that is the result of this query
      */
     public Iterator<Record> execute() {
-        // TODO(proj3_part2): implement
-
         // Pass 1: Iterate through all single tables. For each single table, find
         // the lowest cost QueryOperator to access that table. Construct a mapping
         // of each table name to its lowest cost operator.
@@ -239,7 +244,22 @@ public class QueryPlan {
         // Get the lowest cost operator from the last pass, add GROUP BY and SELECT
         // operators, and return an iterator on the final operator
 
-        return this.executeNaive(); // TODO(proj3_part2): Replace this!!! Allows you to test intermediate functionality
+        transaction.setAliasMap(aliases);
+        try {
+            Map<Set<String>, QueryOperator> pass1Map = aliases.keySet().stream()
+                    .collect(Collectors.toMap(Collections::singleton, this::minCostSingleAccess));
+            Map<Set<String>, QueryOperator> minCost = new HashMap<>(pass1Map);
+            Map<Set<String>, QueryOperator> passiMap;
+            while (!(passiMap = minCostJoins(minCost, pass1Map)).isEmpty()) {
+                minCost = passiMap;
+            }
+            finalOperator = minCostOperator(minCost);
+            addGroupBy();
+            addProjects();
+            return finalOperator.execute();
+        } finally {
+            transaction.clearAliasMap();
+        }
     }
 
     /**
@@ -254,8 +274,8 @@ public class QueryPlan {
         for (int i = 0; i < this.selectColumnNames.size(); i++) {
             String column = this.selectColumnNames.get(i);
 
-            if (this.transaction.indexExists(table, column) &&
-                    this.selectOperators.get(i) != PredicateOperator.NOT_EQUALS) {
+            if (this.transaction.indexExists(table, column)
+                    && this.selectOperators.get(i) != PredicateOperator.NOT_EQUALS) {
                 selectIndices.add(i);
             }
         }
@@ -326,12 +346,8 @@ public class QueryPlan {
      * pushed down select operators
      */
     QueryOperator minCostSingleAccess(String table) {
-        QueryOperator minOp = null;
-
         // Find the cost of a sequential scan of the table
-        // minOp = new SequentialScanOperator(this.transaction, table);
-
-        // TODO(proj3_part2): implement
+        QueryOperator minOp = new SequentialScanOperator(transaction, table);
 
         // 1. Find the cost of a sequential scan of the table
 
@@ -340,6 +356,17 @@ public class QueryPlan {
 
         // 3. Push down SELECT predicates that apply to this table and that were not
         // used for an index scan
+
+        int index = -1;
+        for (int i : getEligibleIndexColumns(table)) {
+            IndexScanOperator op = new IndexScanOperator(transaction, table, selectColumnNames.get(i),
+                    selectOperators.get(i), selectDataBoxes.get(i));
+            if (minOp.getIOCost() > op.getIOCost()) {
+                minOp = op;
+                index = i;
+            }
+        }
+        minOp = addEligibleSelections(minOp, index);
 
         return minOp;
     }
@@ -351,10 +378,8 @@ public class QueryPlan {
      *
      * @return lowest cost join QueryOperator between the input operators
      */
-    private QueryOperator minCostJoinType(QueryOperator leftOp,
-                                          QueryOperator rightOp,
-                                          String leftColumn,
-                                          String rightColumn) {
+    private QueryOperator minCostJoinType(QueryOperator leftOp, QueryOperator rightOp, String leftColumn,
+            String rightColumn) {
         QueryOperator minOp = null;
 
         int minCost = Integer.MAX_VALUE;
@@ -384,10 +409,8 @@ public class QueryPlan {
      * @return a mapping of table names to a join QueryOperator
      */
     Map<Set<String>, QueryOperator> minCostJoins(Map<Set<String>, QueryOperator> prevMap,
-                                         Map<Set<String>, QueryOperator> pass1Map) {
+            Map<Set<String>, QueryOperator> pass1Map) {
         Map<Set<String>, QueryOperator> map = new HashMap<>();
-
-        // TODO(proj3_part2): implement
 
         //We provide a basic description of the logic you have to implement
 
@@ -412,8 +435,34 @@ public class QueryPlan {
          * --- Then given the operator, use minCostJoinType to calculate the cheapest join with that
          * and the previously joined tables.
          */
+        prevMap.entrySet().forEach(prev -> {
+            Set<String> prevTables = prev.getKey();
+            for (int i = 0; i < joinTableNames.size(); i += 1) {
+                String[] joinLeftColumnName = getJoinLeftColumnNameByIndex(i);
+                String[] joinRightColumnName = getJoinRightColumnNameByIndex(i);
+                if (prevTables.contains(joinLeftColumnName[0]) && !prevTables.contains(joinRightColumnName[0])) {
+                    addJoinCost(map, joinRightColumnName[0], prevTables, prev.getValue(),
+                            pass1Map.get(Collections.singleton(joinRightColumnName[0])), joinLeftColumnName[1],
+                            joinRightColumnName[1]);
+                } else if (prevTables.contains(joinRightColumnName[0]) && !prevTables.contains(joinLeftColumnName[0])) {
+                    addJoinCost(map, joinLeftColumnName[0], prevTables,
+                            pass1Map.get(Collections.singleton(joinLeftColumnName[0])), prev.getValue(),
+                            joinLeftColumnName[1], joinRightColumnName[1]);
+                }
+            }
+        });
 
         return map;
+    }
+
+    private void addJoinCost(Map<Set<String>, QueryOperator> map, String joinTable, Set<String> prevTables,
+            QueryOperator leftOp, QueryOperator rightOp, String leftColumn, String rightColumn) {
+        QueryOperator joinOp = minCostJoinType(leftOp, rightOp, leftColumn, rightColumn);
+        Set<String> tables = new HashSet<>(prevTables);
+        tables.add(joinTable);
+        if (!map.containsKey(tables) || map.get(tables).getIOCost() > joinOp.getIOCost()) {
+            map.put(tables, joinOp);
+        }
     }
 
     /**
@@ -442,9 +491,7 @@ public class QueryPlan {
     }
 
     private String checkIndexEligible() {
-        if (this.selectColumnNames.size() > 0
-                && this.groupByColumn == null
-                && this.joinTableNames.size() == 0) {
+        if (this.selectColumnNames.size() > 0 && this.groupByColumn == null && this.joinTableNames.size() == 0) {
             int index = 0;
             for (String column : selectColumnNames) {
                 if (this.transaction.indexExists(this.startTableName, column)) {
@@ -465,9 +512,7 @@ public class QueryPlan {
         PredicateOperator operator = this.selectOperators.get(selectIndex);
         DataBox value = this.selectDataBoxes.get(selectIndex);
 
-        this.finalOperator = new IndexScanOperator(this.transaction, this.startTableName, indexColumn,
-                operator,
-                value);
+        this.finalOperator = new IndexScanOperator(this.transaction, this.startTableName, indexColumn, operator, value);
 
         this.selectColumnNames.remove(selectIndex);
         this.selectOperators.remove(selectIndex);
@@ -483,9 +528,8 @@ public class QueryPlan {
         for (String joinTable : this.joinTableNames) {
             SequentialScanOperator scanOperator = new SequentialScanOperator(this.transaction, joinTable);
 
-            this.finalOperator = new SNLJOperator(finalOperator, scanOperator,
-                                                  this.joinLeftColumnNames.get(index), this.joinRightColumnNames.get(index),
-                                                  this.transaction);
+            this.finalOperator = new SNLJOperator(finalOperator, scanOperator, this.joinLeftColumnNames.get(index),
+                    this.joinRightColumnNames.get(index), this.transaction);
 
             index++;
         }
@@ -498,8 +542,7 @@ public class QueryPlan {
             PredicateOperator operator = this.selectOperators.get(index);
             DataBox value = this.selectDataBoxes.get(index);
 
-            this.finalOperator = new SelectOperator(this.finalOperator, selectColumn,
-                                                    operator, value);
+            this.finalOperator = new SelectOperator(this.finalOperator, selectColumn, operator, value);
 
             index++;
         }
@@ -507,21 +550,20 @@ public class QueryPlan {
 
     private void addGroupBy() {
         if (this.groupByColumn != null) {
-            if (this.projectColumns.size() > 2 || (this.projectColumns.size() == 1 &&
-                                                   !this.projectColumns.get(0).equals(this.groupByColumn))) {
+            if (this.projectColumns.size() > 2
+                    || (this.projectColumns.size() == 1 && !this.projectColumns.get(0).equals(this.groupByColumn))) {
                 throw new QueryPlanException("Can only project columns specified in the GROUP BY clause.");
             }
 
-            this.finalOperator = new GroupByOperator(this.finalOperator, this.transaction,
-                    this.groupByColumn);
+            this.finalOperator = new GroupByOperator(this.finalOperator, this.transaction, this.groupByColumn);
         }
     }
 
     private void addProjects() {
         if (!this.projectColumns.isEmpty() || this.hasCount || this.sumColumnName != null
                 || this.averageColumnName != null) {
-            this.finalOperator = new ProjectOperator(this.finalOperator, this.projectColumns,
-                    this.hasCount, this.averageColumnName, this.sumColumnName);
+            this.finalOperator = new ProjectOperator(this.finalOperator, this.projectColumns, this.hasCount,
+                    this.averageColumnName, this.sumColumnName);
         }
     }
 
