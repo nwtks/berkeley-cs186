@@ -1,12 +1,12 @@
 package edu.berkeley.cs186.database.concurrency;
 
 public enum LockType {
-    S,   // shared
-    X,   // exclusive
-    IS,  // intention shared
-    IX,  // intention exclusive
+    S, // shared
+    X, // exclusive
+    IS, // intention shared
+    IX, // intention exclusive
     SIX, // shared intention exclusive
-    NL;  // no lock held
+    NL; // no lock held
 
     /**
      * This method checks whether lock types A and B are compatible with
@@ -18,9 +18,112 @@ public enum LockType {
         if (a == null || b == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        switch (a) {
+            case S:
+                switch (b) {
+                    case S:
+                        return true;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case X:
+                switch (b) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IS:
+                switch (b) {
+                    case S:
+                        return true;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return true;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IX:
+                switch (b) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case SIX:
+                switch (b) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case NL:
+                switch (b) {
+                    case S:
+                        return true;
+                    case X:
+                        return true;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return true;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            default:
+                return false;
+        }
     }
 
     /**
@@ -32,13 +135,20 @@ public enum LockType {
             throw new NullPointerException("null lock type");
         }
         switch (a) {
-        case S: return IS;
-        case X: return IX;
-        case IS: return IS;
-        case IX: return IX;
-        case SIX: return IX;
-        case NL: return NL;
-        default: throw new UnsupportedOperationException("bad lock type");
+            case S:
+                return IS;
+            case X:
+                return IX;
+            case IS:
+                return IS;
+            case IX:
+                return IX;
+            case SIX:
+                return IX;
+            case NL:
+                return NL;
+            default:
+                throw new UnsupportedOperationException("bad lock type");
         }
     }
 
@@ -50,9 +160,112 @@ public enum LockType {
         if (parentLockType == null || childLockType == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        switch (parentLockType) {
+            case S:
+                switch (childLockType) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case X:
+                switch (childLockType) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IS:
+                switch (childLockType) {
+                    case S:
+                        return true;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IX:
+                switch (childLockType) {
+                    case S:
+                        return true;
+                    case X:
+                        return true;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return true;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case SIX:
+                switch (childLockType) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case NL:
+                switch (childLockType) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            default:
+                return false;
+        }
     }
 
     /**
@@ -65,9 +278,112 @@ public enum LockType {
         if (required == null || substitute == null) {
             throw new NullPointerException("null lock type");
         }
-        // TODO(proj4_part1): implement
-
-        return false;
+        switch (substitute) {
+            case S:
+                switch (required) {
+                    case S:
+                        return true;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case X:
+                switch (required) {
+                    case S:
+                        return true;
+                    case X:
+                        return true;
+                    case IS:
+                        return false;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IS:
+                switch (required) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case IX:
+                switch (required) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case SIX:
+                switch (required) {
+                    case S:
+                        return true;
+                    case X:
+                        return false;
+                    case IS:
+                        return true;
+                    case IX:
+                        return true;
+                    case SIX:
+                        return true;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            case NL:
+                switch (required) {
+                    case S:
+                        return false;
+                    case X:
+                        return false;
+                    case IS:
+                        return false;
+                    case IX:
+                        return false;
+                    case SIX:
+                        return false;
+                    case NL:
+                        return true;
+                    default:
+                        return false;
+                }
+            default:
+                return false;
+        }
     }
 
     /**
@@ -80,14 +396,20 @@ public enum LockType {
     @Override
     public String toString() {
         switch (this) {
-        case S: return "S";
-        case X: return "X";
-        case IS: return "IS";
-        case IX: return "IX";
-        case SIX: return "SIX";
-        case NL: return "NL";
-        default: throw new UnsupportedOperationException("bad lock type");
+            case S:
+                return "S";
+            case X:
+                return "X";
+            case IS:
+                return "IS";
+            case IX:
+                return "IX";
+            case SIX:
+                return "SIX";
+            case NL:
+                return "NL";
+            default:
+                throw new UnsupportedOperationException("bad lock type");
         }
     }
 }
-
