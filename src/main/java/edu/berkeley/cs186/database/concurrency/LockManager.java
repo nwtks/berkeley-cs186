@@ -198,12 +198,12 @@ public class LockManager {
             ResourceEntry resourceEntry = getResourceEntry(name);
             if (!resourceEntry.checkCompatible(lockType, transaction.getTransNum())
                     || !resourceEntry.waitingQueue.isEmpty()) {
+                transaction.prepareBlock();
                 shouldBlock = true;
             }
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
             if (shouldBlock) {
                 resourceEntry.addToQueue(new LockRequest(transaction, lock), false);
-                transaction.prepareBlock();
             } else {
                 releaseNames.forEach(releaseName -> {
                     if (getLockType(transaction, releaseName) == LockType.NL) {
@@ -245,12 +245,12 @@ public class LockManager {
             ResourceEntry resourceEntry = getResourceEntry(name);
             if (!resourceEntry.checkCompatible(lockType, transaction.getTransNum())
                     || !resourceEntry.waitingQueue.isEmpty()) {
+                transaction.prepareBlock();
                 shouldBlock = true;
             }
             Lock lock = new Lock(name, lockType, transaction.getTransNum());
             if (shouldBlock) {
                 resourceEntry.addToQueue(new LockRequest(transaction, lock), false);
-                transaction.prepareBlock();
             } else {
                 resourceEntry.grantOrUpdateLock(lock);
             }
@@ -320,12 +320,12 @@ public class LockManager {
             }
             if (!resourceEntry.checkCompatible(newLockType, transaction.getTransNum())
                     || !resourceEntry.waitingQueue.isEmpty()) {
+                transaction.prepareBlock();
                 shouldBlock = true;
             }
             Lock lock = new Lock(name, newLockType, transaction.getTransNum());
             if (shouldBlock) {
                 resourceEntry.addToQueue(new LockRequest(transaction, lock), false);
-                transaction.prepareBlock();
             } else {
                 resourceEntry.grantOrUpdateLock(lock);
             }
