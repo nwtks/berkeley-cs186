@@ -252,7 +252,7 @@ public class LockContext {
         LockType lockType = getExplicitLockType(transaction);
         for (LockContext ancestor = parent; ancestor != null; ancestor = ancestor.parent) {
             LockType ancestorLockType = ancestor.getExplicitLockType(transaction);
-            if (ancestorLockType == LockType.S || ancestorLockType == LockType.X) {
+            if (!ancestorLockType.isIntent()) {
                 lockType = ancestorLockType;
             }
         }
