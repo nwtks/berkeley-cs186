@@ -22,10 +22,10 @@ import edu.berkeley.cs186.database.table.Schema;
 public class ExampleLoader {
     public static Database setupDatabase() throws IOException {
         // Basic database for project 1 through 3
-        Database database = new Database("demo", 25);
+        // Database database = new Database("demo", 25);
         
         // Use the following after completing project 4 (locking)
-        // Database database = new Database("demo", 25, new LockManager());
+        Database database = new Database("demo", 25, new LockManager());
         
         // Use the following after completing project 5 (recovery)
         // Database database = new Database("demo", 25, new LockManager(), new ClockEvictionPolicy(), true);
