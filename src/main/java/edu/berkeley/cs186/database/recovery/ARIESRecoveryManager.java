@@ -137,10 +137,10 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long commit(long transNum) {
+        transactionTable.get(transNum).transaction.setStatus(Status.COMMITTING);
         long lsn = logManager
                 .appendToLog(new CommitTransactionLogRecord(transNum, transactionTable.get(transNum).lastLSN));
         transactionTable.get(transNum).lastLSN = lsn;
-        transactionTable.get(transNum).transaction.setStatus(Status.COMMITTING);
         logManager.flushToLSN(lsn);
         return lsn;
     }
@@ -157,10 +157,10 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     @Override
     public long abort(long transNum) {
+        transactionTable.get(transNum).transaction.setStatus(Status.ABORTING);
         long lsn = logManager
                 .appendToLog(new AbortTransactionLogRecord(transNum, transactionTable.get(transNum).lastLSN));
         transactionTable.get(transNum).lastLSN = lsn;
-        transactionTable.get(transNum).transaction.setStatus(Status.ABORTING);
         return lsn;
     }
 
@@ -180,10 +180,11 @@ public class ARIESRecoveryManager implements RecoveryManager {
         if (transactionTable.get(transNum).transaction.getStatus() == Status.ABORTING) {
             rollbackToLSN(transNum, 0);
         }
+        transactionTable.get(transNum).transaction.cleanup();
+        transactionTable.get(transNum).transaction.setStatus(Status.COMPLETE);
         long lsn = logManager
                 .appendToLog(new EndTransactionLogRecord(transNum, transactionTable.get(transNum).lastLSN));
         transactionTable.get(transNum).lastLSN = lsn;
-        transactionTable.get(transNum).transaction.setStatus(Status.COMPLETE);
         transactionTable.remove(transNum);
         return lsn;
     }
@@ -784,7 +785,6 @@ public class ARIESRecoveryManager implements RecoveryManager {
 
     /**
      * This method performs the redo pass of restart recovery.
-    
      * First, a priority queue is created sorted on lastLSN of all aborting transactions.
      *
      * Then, always working on the largest LSN in the priority queue until we are done,
@@ -896,16 +896,6 @@ public class ARIESRecoveryManager implements RecoveryManager {
             }
         } finally {
             TransactionContext.unsetTransaction();
-        }
-    }
-
-    /**
-     * Comparator for Pair<A, B> comparing only on the first element (type A), in reverse order.
-     */
-    private static class PairFirstReverseComparator<A extends Comparable<A>, B> implements Comparator<Pair<A, B>> {
-        @Override
-        public int compare(Pair<A, B> p0, Pair<A, B> p1) {
-            return p1.getFirst().compareTo(p0.getFirst());
         }
     }
 }
